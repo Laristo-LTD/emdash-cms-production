@@ -5,6 +5,8 @@
  */
 
 import { Loader, Toast } from "@cloudflare/kumo";
+import { plural } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { QueryClient } from "@tanstack/react-query";
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -21,7 +23,7 @@ import * as React from "react";
 
 import { CommentInbox } from "./components/comments/CommentInbox";
 import { ContentEditor } from "./components/ContentEditor";
-import { ContentList } from "./components/ContentList";
+import { ContentList, type ContentListSort } from "./components/ContentList";
 import { ContentTypeEditor } from "./components/ContentTypeEditor";
 import { ContentTypeList } from "./components/ContentTypeList";
 import { Dashboard } from "./components/Dashboard";
@@ -34,7 +36,6 @@ import { MediaLibrary } from "./components/MediaLibrary";
 import { MenuEditor } from "./components/MenuEditor";
 import { MenuList } from "./components/MenuList";
 import { PluginManager } from "./components/PluginManager";
-import type { PluginBlockDef } from "./components/PortableTextEditor";
 import { Redirects } from "./components/Redirects";
 import { SandboxedPluginPage } from "./components/SandboxedPluginPage";
 import { SectionEditor } from "./components/SectionEditor";
@@ -94,7 +95,6 @@ import {
 	unpublishContent,
 	discardDraft,
 	fetchRevision,
-	type AdminManifest,
 	type CreateCollectionInput,
 	type UpdateCollectionInput,
 	type CreateFieldInput,
@@ -112,6 +112,7 @@ import {
 	type CommentStatus,
 } from "./lib/api/comments";
 import { usePluginPage } from "./lib/plugin-context";
+import { getPluginBlocks } from "./lib/pluginBlocks";
 import { sanitizeRedirectUrl } from "./lib/url";
 import { BylinesPage } from "./routes/bylines";
 import { UsersPage } from "./routes/users";
@@ -225,6 +226,7 @@ if (typeof window !== "undefined" && typeof window.requestIdleCallback === "unde
 }
 
 function RootComponent() {
+	const { t } = useLingui();
 	const {
 		data: manifest,
 		isLoading,
@@ -239,7 +241,7 @@ function RootComponent() {
 	}
 
 	if (error || !manifest) {
-		return <ErrorScreen error={error?.message || "Failed to load admin"} />;
+		return <ErrorScreen error={error?.message ?? t`Failed to load admin`} />;
 	}
 
 	// Plugin admin components are passed via props and available through PluginAdminContext
@@ -279,6 +281,7 @@ const contentListRoute = createRoute({
 });
 
 function ContentListPage() {
+	const { t } = useLingui();
 	const { collection } = useParams({ from: "/_admin/content/$collection" });
 	const { locale: localeParam } = useSearch({ from: "/_admin/content/$collection" });
 	const queryClient = useQueryClient();
@@ -295,14 +298,23 @@ function ContentListPage() {
 	// Default to defaultLocale when i18n is enabled and no locale specified
 	const activeLocale = i18n ? (localeParam ?? i18n.defaultLocale) : undefined;
 
+	// Controlled sort state — passed to the list, and included in the query
+	// key so changing direction invalidates the current cursor chain.
+	const [sort, setSort] = React.useState<ContentListSort>({
+		field: "updatedAt",
+		direction: "desc",
+	});
+
 	const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } =
 		useInfiniteQuery({
-			queryKey: ["content", collection, { locale: activeLocale }],
+			queryKey: ["content", collection, { locale: activeLocale, sort }],
 			queryFn: ({ pageParam }) =>
 				fetchContentList(collection, {
 					locale: activeLocale,
 					cursor: pageParam,
 					limit: 100,
+					orderBy: sort.field,
+					order: sort.direction,
 				}),
 			initialPageParam: undefined as string | undefined,
 			getNextPageParam: (lastPage) => lastPage.nextCursor,
@@ -323,8 +335,8 @@ function ContentListPage() {
 		},
 		onError: (mutationError) => {
 			toastManager.add({
-				title: "Failed to delete",
-				description: mutationError instanceof Error ? mutationError.message : "An error occurred",
+				title: t`Failed to delete`,
+				description: mutationError instanceof Error ? mutationError.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -338,8 +350,8 @@ function ContentListPage() {
 		},
 		onError: (mutationError) => {
 			toastManager.add({
-				title: "Failed to restore",
-				description: mutationError instanceof Error ? mutationError.message : "An error occurred",
+				title: t`Failed to restore`,
+				description: mutationError instanceof Error ? mutationError.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -352,8 +364,8 @@ function ContentListPage() {
 		},
 		onError: (mutationError) => {
 			toastManager.add({
-				title: "Failed to delete",
-				description: mutationError instanceof Error ? mutationError.message : "An error occurred",
+				title: t`Failed to delete`,
+				description: mutationError instanceof Error ? mutationError.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -366,8 +378,8 @@ function ContentListPage() {
 		},
 		onError: (mutationError) => {
 			toastManager.add({
-				title: "Failed to duplicate",
-				description: mutationError instanceof Error ? mutationError.message : "An error occurred",
+				title: t`Failed to duplicate`,
+				description: mutationError instanceof Error ? mutationError.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -419,21 +431,10 @@ function ContentListPage() {
 			activeLocale={activeLocale}
 			onLocaleChange={handleLocaleChange}
 			urlPattern={collectionConfig.urlPattern}
+			sort={sort}
+			onSortChange={setSort}
 		/>
 	);
-}
-
-/** Extract plugin block definitions from the manifest for Portable Text editor */
-function getPluginBlocks(manifest: AdminManifest): PluginBlockDef[] {
-	const blocks: PluginBlockDef[] = [];
-	for (const [pluginId, plugin] of Object.entries(manifest.plugins)) {
-		if (plugin.portableTextBlocks) {
-			for (const block of plugin.portableTextBlocks) {
-				blocks.push({ ...block, pluginId });
-			}
-		}
-	}
-	return blocks;
 }
 
 // Content new route
@@ -556,6 +557,7 @@ const contentEditRoute = createRoute({
 const ROLE_EDITOR = 40;
 
 function ContentEditPage() {
+	const { t } = useLingui();
 	const { collection, id } = useParams({
 		from: "/_admin/content/$collection/$id",
 	});
@@ -637,7 +639,7 @@ function ContentEditPage() {
 		queryKey: ["currentUser"],
 		queryFn: async (): Promise<{ id: string; role: number }> => {
 			const response = await apiFetch("/_emdash/api/auth/me");
-			return parseApiResponse<{ id: string; role: number }>(response, "Failed to fetch user");
+			return parseApiResponse<{ id: string; role: number }>(response, t`Failed to fetch user`);
 		},
 		staleTime: 5 * 60 * 1000,
 	});
@@ -696,8 +698,8 @@ function ContentEditPage() {
 		},
 		onError: (error) => {
 			toastManager.add({
-				title: "Failed to save",
-				description: error instanceof Error ? error.message : "An error occurred",
+				title: t`Failed to save`,
+				description: error instanceof Error ? error.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -727,8 +729,8 @@ function ContentEditPage() {
 		},
 		onError: (err) => {
 			toastManager.add({
-				title: "Autosave failed",
-				description: err instanceof Error ? err.message : "An error occurred",
+				title: t`Autosave failed`,
+				description: err instanceof Error ? err.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -739,12 +741,12 @@ function ContentEditPage() {
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["content", collection, id] });
 			void queryClient.invalidateQueries({ queryKey: ["revisions", collection, id] });
-			toastManager.add({ title: "Published", description: "Content is now live" });
+			toastManager.add({ title: t`Published`, description: t`Content is now live` });
 		},
 		onError: (error) => {
 			toastManager.add({
-				title: "Failed to publish",
-				description: error instanceof Error ? error.message : "An error occurred",
+				title: t`Failed to publish`,
+				description: error instanceof Error ? error.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -755,12 +757,12 @@ function ContentEditPage() {
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["content", collection, id] });
 			void queryClient.invalidateQueries({ queryKey: ["revisions", collection, id] });
-			toastManager.add({ title: "Unpublished", description: "Content removed from public view" });
+			toastManager.add({ title: t`Unpublished`, description: t`Content removed from public view` });
 		},
 		onError: (error) => {
 			toastManager.add({
-				title: "Failed to unpublish",
-				description: error instanceof Error ? error.message : "An error occurred",
+				title: t`Failed to unpublish`,
+				description: error instanceof Error ? error.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -772,14 +774,14 @@ function ContentEditPage() {
 			void queryClient.invalidateQueries({ queryKey: ["content", collection, id] });
 			void queryClient.invalidateQueries({ queryKey: ["revisions", collection, id] });
 			toastManager.add({
-				title: "Changes discarded",
-				description: "Reverted to published version",
+				title: t`Changes discarded`,
+				description: t`Reverted to published version`,
 			});
 		},
 		onError: (error) => {
 			toastManager.add({
-				title: "Failed to discard changes",
-				description: error instanceof Error ? error.message : "An error occurred",
+				title: t`Failed to discard changes`,
+				description: error instanceof Error ? error.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -790,14 +792,14 @@ function ContentEditPage() {
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["content", collection, id] });
 			toastManager.add({
-				title: "Scheduled",
-				description: "Content has been scheduled for publishing",
+				title: t`Scheduled`,
+				description: t`Content has been scheduled for publishing`,
 			});
 		},
 		onError: (error) => {
 			toastManager.add({
-				title: "Failed to schedule",
-				description: error instanceof Error ? error.message : "An error occurred",
+				title: t`Failed to schedule`,
+				description: error instanceof Error ? error.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -808,14 +810,14 @@ function ContentEditPage() {
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["content", collection, id] });
 			toastManager.add({
-				title: "Unscheduled",
-				description: "Content reverted to draft",
+				title: t`Unscheduled`,
+				description: t`Content reverted to draft`,
 			});
 		},
 		onError: (error) => {
 			toastManager.add({
-				title: "Failed to unschedule",
-				description: error instanceof Error ? error.message : "An error occurred",
+				title: t`Failed to unschedule`,
+				description: error instanceof Error ? error.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -838,14 +840,14 @@ function ContentEditPage() {
 				params: { collection, id: result.id },
 			});
 			toastManager.add({
-				title: "Translation created",
-				description: `Created ${result.locale?.toUpperCase() ?? "new"} translation`,
+				title: t`Translation created`,
+				description: t`Created ${result.locale?.toUpperCase() ?? t`new`} translation`,
 			});
 		},
 		onError: (error) => {
 			toastManager.add({
-				title: "Failed to create translation",
-				description: error instanceof Error ? error.message : "An error occurred",
+				title: t`Failed to create translation`,
+				description: error instanceof Error ? error.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -864,8 +866,8 @@ function ContentEditPage() {
 		},
 		onError: (error) => {
 			toastManager.add({
-				title: "Failed to delete",
-				description: error instanceof Error ? error.message : "An error occurred",
+				title: t`Failed to delete`,
+				description: error instanceof Error ? error.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -1010,6 +1012,7 @@ const commentsRoute = createRoute({
 const ROLE_ADMIN = 50;
 
 function CommentsPage() {
+	const { t } = useLingui();
 	const queryClient = useQueryClient();
 	const toastManager = Toast.useToastManager();
 
@@ -1023,7 +1026,7 @@ function CommentsPage() {
 		queryKey: ["currentUser"],
 		queryFn: async (): Promise<{ id: string; role: number }> => {
 			const response = await apiFetch("/_emdash/api/auth/me");
-			return parseApiResponse<{ id: string; role: number }>(response, "Failed to fetch user");
+			return parseApiResponse<{ id: string; role: number }>(response, t`Failed to fetch user`);
 		},
 		staleTime: 5 * 60 * 1000,
 	});
@@ -1076,8 +1079,8 @@ function CommentsPage() {
 		},
 		onError: (error) => {
 			toastManager.add({
-				title: "Failed to update status",
-				description: error instanceof Error ? error.message : "An error occurred",
+				title: t`Failed to update status`,
+				description: error instanceof Error ? error.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -1092,8 +1095,8 @@ function CommentsPage() {
 		},
 		onError: (error) => {
 			toastManager.add({
-				title: "Failed to delete comment",
-				description: error instanceof Error ? error.message : "An error occurred",
+				title: t`Failed to delete comment`,
+				description: error instanceof Error ? error.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -1112,13 +1115,13 @@ function CommentsPage() {
 			void queryClient.invalidateQueries({ queryKey: ["comments"] });
 			void queryClient.invalidateQueries({ queryKey: ["commentCounts"] });
 			toastManager.add({
-				title: `${result.affected} comment${result.affected !== 1 ? "s" : ""} updated`,
+				title: plural(result.affected, { one: "# comment updated", other: "# comments updated" }),
 			});
 		},
 		onError: (error) => {
 			toastManager.add({
-				title: "Failed to perform bulk action",
-				description: error instanceof Error ? error.message : "An error occurred",
+				title: t`Failed to perform bulk action`,
+				description: error instanceof Error ? error.message : t`An error occurred`,
 				type: "error",
 			});
 		},
@@ -1132,8 +1135,8 @@ function CommentsPage() {
 		return (
 			<div className="flex items-center justify-center min-h-[50vh]">
 				<div className="text-center">
-					<h1 className="text-2xl font-bold">Access Denied</h1>
-					<p className="mt-2 text-kumo-subtle">You need Editor permissions to moderate comments.</p>
+					<h1 className="text-2xl font-bold">{t`Access Denied`}</h1>
+					<p className="mt-2 text-kumo-subtle">{t`You need Editor permissions to moderate comments.`}</p>
 				</div>
 			</div>
 		);
@@ -1328,6 +1331,11 @@ const menuEditorRoute = createRoute({
 	getParentRoute: () => adminLayoutRoute,
 	path: "/menus/$name",
 	component: MenuEditor,
+	validateSearch: (search: Record<string, unknown>) => {
+		return {
+			locale: typeof search.locale === "string" ? search.locale : undefined,
+		};
+	},
 });
 
 // Taxonomy manager route
@@ -1485,6 +1493,8 @@ const contentTypesEditRoute = createRoute({
 function ContentTypesEditPage() {
 	const { slug } = useParams({ from: "/_admin/content-types/$slug" });
 	const queryClient = useQueryClient();
+	const toastManager = Toast.useToastManager();
+	const { t } = useLingui();
 
 	const {
 		data: collection,
@@ -1524,6 +1534,13 @@ function ContentTypesEditPage() {
 			});
 			void queryClient.invalidateQueries({ queryKey: ["schema", "collections"] });
 			void queryClient.invalidateQueries({ queryKey: ["manifest"] });
+		},
+		onError: (mutationError) => {
+			toastManager.add({
+				title: t`Failed to save`,
+				description: mutationError instanceof Error ? mutationError.message : t`An error occurred`,
+				type: "error",
+			});
 		},
 	});
 
@@ -1686,27 +1703,29 @@ declare module "@tanstack/react-router" {
 // Shared components
 
 function LoadingScreen() {
+	const { t } = useLingui();
 	return (
 		<div className="flex items-center justify-center min-h-screen">
 			<div className="text-center">
 				<Loader />
-				<p className="mt-4 text-kumo-subtle">Loading configuration...</p>
+				<p className="mt-4 text-kumo-subtle">{t`Loading configuration...`}</p>
 			</div>
 		</div>
 	);
 }
 
 function ErrorScreen({ error }: { error: string }) {
+	const { t } = useLingui();
 	return (
 		<div className="flex items-center justify-center min-h-screen">
 			<div className="text-center">
-				<h1 className="text-xl font-bold text-kumo-danger">Error</h1>
+				<h1 className="text-xl font-bold text-kumo-danger">{t`Error`}</h1>
 				<p className="mt-2 text-kumo-subtle">{error}</p>
 				<button
 					onClick={() => window.location.reload()}
 					className="mt-4 px-4 py-2 bg-kumo-brand text-white rounded-md"
 				>
-					Retry
+					{t`Retry`}
 				</button>
 			</div>
 		</div>
@@ -1714,15 +1733,16 @@ function ErrorScreen({ error }: { error: string }) {
 }
 
 function NotFoundPage({ message }: { message?: string }) {
+	const { t } = useLingui();
 	return (
 		<div className="flex items-center justify-center min-h-[50vh]">
 			<div className="text-center">
-				<h1 className="text-2xl font-bold">Page Not Found</h1>
+				<h1 className="text-2xl font-bold">{t`Page Not Found`}</h1>
 				<p className="mt-2 text-kumo-subtle">
-					{message || "The page you're looking for doesn't exist."}
+					{message ?? t`The page you're looking for doesn't exist.`}
 				</p>
 				<Link to="/" className="mt-4 inline-block text-kumo-brand">
-					Go to Dashboard
+					{t`Go to Dashboard`}
 				</Link>
 			</div>
 		</div>

@@ -6,7 +6,7 @@
  * update/uninstall for marketplace-installed plugins.
  */
 
-import { Badge, Button, Switch, Toast } from "@cloudflare/kumo";
+import { Badge, Button, buttonVariants, Switch, Toast } from "@cloudflare/kumo";
 import { useLingui } from "@lingui/react/macro";
 import {
 	PuzzlePiece,
@@ -15,7 +15,6 @@ import {
 	SquaresFour,
 	WebhooksLogo,
 	CaretDown,
-	CaretRight,
 	ArrowsClockwise,
 	Storefront,
 	Trash,
@@ -41,6 +40,7 @@ import {
 } from "../lib/api/marketplace.js";
 import { safeIconUrl } from "../lib/url.js";
 import { cn } from "../lib/utils";
+import { CaretNext } from "./ArrowIcons.js";
 import { CapabilityConsentDialog } from "./CapabilityConsentDialog.js";
 import { DialogError, getMutationError } from "./DialogError.js";
 
@@ -147,19 +147,15 @@ export function PluginManager({ manifest }: PluginManagerProps) {
 							variant="ghost"
 							onClick={() => void refetchUpdates()}
 							disabled={isCheckingUpdates}
+							icon={<ArrowsClockwise className={cn(isCheckingUpdates && "animate-spin")} />}
 						>
-							<ArrowsClockwise
-								className={cn("mr-2 h-4 w-4", isCheckingUpdates && "animate-spin")}
-							/>
 							{t`Check for updates`}
 						</Button>
 					)}
 					{hasMarketplace && (
-						<Link to="/plugins/marketplace">
-							<Button variant="ghost">
-								<Storefront className="mr-2 h-4 w-4" />
-								{t`Marketplace`}
-							</Button>
+						<Link to="/plugins/marketplace" className={buttonVariants({ variant: "ghost" })}>
+							<Storefront className="me-2 h-4 w-4" aria-hidden="true" />
+							{t`Marketplace`}
 						</Link>
 					)}
 					<span className="text-sm text-kumo-subtle">{t`${plugins?.length ?? 0} plugins`}</span>
@@ -367,14 +363,14 @@ function PluginCard({
 						{isMarketplace && hasMarketplace && (
 							<Link to="/plugins/marketplace/$pluginId" params={{ pluginId: plugin.id }}>
 								<Button variant="ghost" size="sm">
-									<Storefront className="mr-1.5 h-3.5 w-3.5" />
+									<Storefront className="me-1.5 h-3.5 w-3.5" />
 									{t`View in Marketplace`}
 								</Button>
 							</Link>
 						)}
 
 						{plugin.hasAdminPages && plugin.enabled && (
-							<Link to="/plugins/$pluginId/$" params={{ pluginId: plugin.id, _splat: "settings" }}>
+							<Link to="/plugins/$pluginId/$" params={{ pluginId: plugin.id, _splat: "" }}>
 								<Button variant="ghost" shape="square" aria-label={t`Settings`}>
 									<Gear className="h-4 w-4" />
 									<span className="sr-only">{t`Settings`}</span>
@@ -396,7 +392,7 @@ function PluginCard({
 							onClick={() => setExpanded(!expanded)}
 							aria-expanded={expanded}
 						>
-							{expanded ? <CaretDown className="h-4 w-4" /> : <CaretRight className="h-4 w-4" />}
+							{expanded ? <CaretDown className="h-4 w-4" /> : <CaretNext className="h-4 w-4" />}
 							<span className="sr-only">
 								{expanded ? t`Collapse` : t`Expand`} {t`details`}
 							</span>
@@ -479,8 +475,8 @@ function PluginCard({
 									className="text-kumo-danger hover:text-kumo-danger"
 									onClick={() => setShowUninstallConfirm(true)}
 									disabled={uninstallMutation.isPending}
+									icon={<Trash />}
 								>
-									<Trash className="mr-2 h-4 w-4" />
 									{t`Uninstall`}
 								</Button>
 							</div>
